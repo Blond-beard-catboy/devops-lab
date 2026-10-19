@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check Go formatting
+        run: |
+          files="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$files" ]; then
+            printf 'These Go files need gofmt:\n%s\n' "$files"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build container image
+        run: docker build --pull --tag travel-agency-demo:ci .
