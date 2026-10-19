@@ -1,3 +1,4 @@
 .env
 .env.*
 !.env.example
+deploy/kubernetes/local-secrets.env

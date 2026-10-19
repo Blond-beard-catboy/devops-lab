@@ -16,7 +16,8 @@
 - Go HTTP-сервис отдаёт API и статические файлы интерфейса.
 - PostgreSQL хранит туры и заявки.
 - Docker Compose используется для локального ручного запуска.
-- Kubernetes и стек Prometheus, Grafana, Loki и Grafana Alloy запланированы отдельным этапом.
+- Локальный Kubernetes-стенд описан манифестами для API и PostgreSQL.
+- Метрики Prometheus, Grafana, Loki и Grafana Alloy запланированы следующим этапом.
 - Платежи, учётные записи, админ-панель и реальные внешние интеграции не входят в первую версию.
 
 ## Запуск
@@ -80,11 +81,42 @@ go vet ./...
 
 GitHub Actions запускает форматирование, `go vet`, Go-тесты и сборку контейнера при push в `main` и при Pull Request в `main`. Workflow не публикует образ.
 
+## Локальный Kubernetes
+
+Манифесты рассчитаны на локальный кластер Minikube с настроенным StorageClass. API и PostgreSQL запускаются в namespace `travel-demo`; база использует StatefulSet и PVC. Порт приложения пробрасывается локально через `kubectl port-forward`, Ingress не требуется.
+
+```sh
+cp deploy/kubernetes/local-secrets.env.example deploy/kubernetes/local-secrets.env
+# При необходимости поменяй локальный пароль в файле и DATABASE_URL.
+docker build -t travel-agency-demo:local .
+minikube image load travel-agency-demo:local
+kubectl apply -f deploy/kubernetes/namespace.yaml
+kubectl create secret generic travel-secrets -n travel-demo \
+  --from-env-file=deploy/kubernetes/local-secrets.env \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap db-init -n travel-demo \
+  --from-file=001-init.sql=db/init.sql \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f deploy/kubernetes/database.yaml
+kubectl rollout status statefulset/postgres -n travel-demo --timeout=180s
+kubectl apply -f deploy/kubernetes/api.yaml
+kubectl rollout status deployment/travel-api -n travel-demo --timeout=180s
+kubectl port-forward -n travel-demo service/travel-api 8080:8080
+```
+
+Открой <http://localhost:8080>. Секретный env-файл исключён из Git. Для удаления учебного стенда:
+
+```sh
+kubectl delete namespace travel-demo
+```
+
+Удаление namespace удалит заявки и PVC-объект. Удаление самих файлов базы зависит от политики удаления томов выбранного StorageClass.
+
 ## Дальнейший план
 
 1. Ручная проверка интерфейса и API — выполнена.
 2. Автоматические unit и HTTP/API-тесты — добавлены.
 3. CI: форматирование, `go vet`, тесты и сборка контейнера — настроен.
-4. Kubernetes-развёртывание локального стенда.
+4. Kubernetes-манифесты приложения и PostgreSQL — подготовлены, нужна ручная проверка в Minikube.
 5. Метрики Prometheus, логи в Loki через Grafana Alloy, дашборды Grafana и базовые алерты.
 6. Документация окружений, диагностики, релиза и отката.
