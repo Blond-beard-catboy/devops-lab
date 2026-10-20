@@ -1,0 +1,53 @@
+discovery.kubernetes "travel_demo_pods" {
+  role = "pod"
+
+  namespaces {
+    names = ["travel-demo"]
+  }
+}
+
+discovery.relabel "travel_demo_logs" {
+  targets = discovery.kubernetes.travel_demo_pods.targets
+
+  rule {
+    action        = "keep"
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+    regex         = "^(travel-api|postgres)$"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+    target_label  = "service"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "travel-demo"
+  }
+}
+
+loki.source.kubernetes "travel_demo" {
+  targets    = discovery.relabel.travel_demo_logs.output
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

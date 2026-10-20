@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Travel Agency
+    orgId: 1
+    folder: Travel Agency
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

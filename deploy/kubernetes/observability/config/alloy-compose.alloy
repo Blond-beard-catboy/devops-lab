@@ -1,0 +1,38 @@
+discovery.docker "compose" {
+  host = "http://docker-socket-proxy:2375"
+  refresh_interval = "10s"
+}
+
+discovery.relabel "travel_agency_containers" {
+  targets = discovery.docker.compose.targets
+
+  rule {
+    action        = "keep"
+    source_labels = ["__meta_docker_container_label_com_example_travel_agency"]
+    regex         = "true"
+  }
+
+  rule {
+    action        = "keep"
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "^(api|db)$"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "travel_agency" {
+  host       = "http://docker-socket-proxy:2375"
+  targets    = discovery.relabel.travel_agency_containers.output
+  labels     = { job = "travel-agency-demo" }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

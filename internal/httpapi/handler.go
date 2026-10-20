@@ -16,6 +16,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 //go:embed static/*
@@ -55,19 +57,23 @@ type Store interface {
 }
 
 type Handler struct {
-	store  Store
-	logger *slog.Logger
+	store   Store
+	logger  *slog.Logger
+	metrics *httpMetrics
 }
 
 func New(store Store, logger *slog.Logger) http.Handler {
-	h := &Handler{store: store, logger: logger}
+	registry := prometheus.NewRegistry()
+	metrics := newHTTPMetrics(registry)
+	h := &Handler{store: store, logger: logger, metrics: metrics}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", h.health)
-	mux.HandleFunc("GET /readyz", h.ready)
-	mux.HandleFunc("GET /api/v1/tours", h.listTours)
-	mux.HandleFunc("GET /api/v1/tours/{id}", h.getTour)
-	mux.HandleFunc("POST /api/v1/bookings", h.createBooking)
-	mux.HandleFunc("GET /", h.index)
+	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	mux.Handle("GET /healthz", metrics.instrument("GET", "/healthz", http.HandlerFunc(h.health)))
+	mux.Handle("GET /readyz", metrics.instrument("GET", "/readyz", http.HandlerFunc(h.ready)))
+	mux.Handle("GET /api/v1/tours", metrics.instrument("GET", "/api/v1/tours", http.HandlerFunc(h.listTours)))
+	mux.Handle("GET /api/v1/tours/{id}", metrics.instrument("GET", "/api/v1/tours/{id}", http.HandlerFunc(h.getTour)))
+	mux.Handle("POST /api/v1/bookings", metrics.instrument("POST", "/api/v1/bookings", http.HandlerFunc(h.createBooking)))
+	mux.Handle("GET /", metrics.instrument("GET", "/", http.HandlerFunc(h.index)))
 	return h.accessLog(securityHeaders(mux))
 }
 
@@ -163,6 +169,7 @@ func (h *Handler) createBooking(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "could not create booking")
 		return
 	}
+	h.metrics.bookingsCreated.Inc()
 	h.writeJSON(w, http.StatusCreated, booking)
 }
 

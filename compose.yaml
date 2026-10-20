@@ -1,6 +1,8 @@
 services:
   db:
     image: postgres:17-alpine
+    labels:
+      com.example.travel-agency: "true"
     environment:
       POSTGRES_DB: travel
       POSTGRES_USER: travel
@@ -18,6 +20,8 @@ services:
 
   api:
     build: .
+    labels:
+      com.example.travel-agency: "true"
     environment:
       HTTP_ADDR: :8080
       DATABASE_URL: postgres://travel:${POSTGRES_PASSWORD:-travel-local-only}@db:5432/travel?sslmode=disable
@@ -26,11 +30,96 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      default:
+        aliases:
+          - travel-api
     healthcheck:
       test: ["CMD", "/travel-api", "healthcheck"]
       interval: 10s
       timeout: 3s
       retries: 3
 
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=1GB
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./deploy/kubernetes/observability/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/kubernetes/observability/config/rules.yml:/etc/prometheus/rules.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./deploy/kubernetes/observability/config/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      INFO: "1"
+      POST: "0"
+    expose:
+      - "2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.20.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./deploy/kubernetes/observability/config/alloy-compose.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      loki:
+        condition: service_started
+      docker-socket-proxy:
+        condition: service_started
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin-local-only}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/kubernetes/observability/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/kubernetes/observability/config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+  alloy_data:

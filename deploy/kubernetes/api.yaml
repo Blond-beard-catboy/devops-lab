@@ -97,10 +97,11 @@ metadata:
     app.kubernetes.io/name: travel-api
     app.kubernetes.io/part-of: travel-agency-demo
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app.kubernetes.io/name: travel-api
   ports:
     - name: http
       port: 8080
       targetPort: http
+      nodePort: 30080

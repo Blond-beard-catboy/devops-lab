@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: travel-demo
+
+resources:
+  - resources.yaml
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=config/prometheus.yml
+      - rules.yml=config/rules.yml
+  - name: loki-config
+    files:
+      - loki.yml=config/loki.yml
+  - name: alloy-config
+    files:
+      - config.alloy=config/alloy-kubernetes.alloy
+  - name: grafana-provisioning
+    files:
+      - datasources.yml=config/grafana/provisioning/datasources/datasources.yml
+      - dashboards.yml=config/grafana/provisioning/dashboards/dashboards.yml
+  - name: grafana-dashboard
+    files:
+      - travel-agency-overview.json=config/grafana/dashboards/travel-agency-overview.json
